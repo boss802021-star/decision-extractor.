@@ -1,58 +1,57 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 from fpdf import FPDF
 
-# 1. Secret Configuration - This pulls the key from your hidden settings
-if "GOOGLE_API_KEY" in st.secrets:
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-else:
-    st.error("API Key missing! Please add it to the Streamlit Secrets.")
+# --- TOOL CONFIGURATION ---
+st.set_page_config(page_title="Decision AI Pro", layout="centered")
+st.title("📊 Strategic Decision Extractor")
 
-# Function to create the PDF
+# --- API SETUP (Using Hidden Secrets) ---
+if "GOOGLE_API_KEY" in st.secrets:
+    client = genai.Client(api_key=st.secrets["GOOGLE_API_KEY"])
+else:
+    st.error("Missing API Key! Please add GOOGLE_API_KEY to Streamlit Secrets.")
+    st.stop()
+
+# --- PDF GENERATOR FUNCTION ---
 def create_pdf(text):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    # Clean text for PDF encoding
+    # Clean text to prevent PDF errors
     clean_text = text.encode('latin-1', 'ignore').decode('latin-1')
     pdf.multi_cell(0, 10, txt=clean_text)
-    return pdf.output(dest='S')
+    return pdf.output()
 
-st.set_page_config(page_title="Decision AI Pro", layout="centered")
-st.title("📊 Strategic Decision Extractor")
-st.markdown("Upload your content below. Our AI will identify key decisions, owners, and deadlines.")
-
-# Using 'gemini-1.5-flash' which is the most stable free-tier model
-model = genai.GenerativeModel('gemini-1.5-flash')
-
-uploaded_file = st.file_uploader("Upload Document (Text or Markdown)", type=['txt', 'md'])
+# --- MAIN APP LOGIC ---
+uploaded_file = st.file_uploader("Upload Document", type=['txt', 'md'])
 
 if uploaded_file:
     if st.button("Generate Decision Report"):
         content = uploaded_file.read().decode("utf-8")
         
-        with st.spinner('Analyzing content...'):
-            prompt = f"""
-            You are an expert project manager. Extract every decision from the text below.
-            Format it as a table with columns: Decision, Assigned To, and Deadline.
-            If no deadline is found, write 'N/A'.
-            
-            Text: {content}
-            """
+        with st.spinner('AI is processing your content...'):
             try:
-                response = model.generate_content(prompt)
-                result_text = response.text
+                # We use the newest 2025 model: gemini-2.0-flash
+                response = client.models.generate_content(
+                    model='gemini-2.0-flash', 
+                    contents=f"Extract a table of decisions, owners, and deadlines from this text: {content}"
+                )
                 
+                result_text = response.text
                 st.subheader("Extracted Decisions")
                 st.markdown(result_text)
                 
-                # PDF Download
+                # Create the Downloadable PDF
                 pdf_data = create_pdf(result_text)
                 st.download_button(
-                    label="📥 Download Professional PDF Report",
+                    label="📥 Download PDF Report",
                     data=pdf_data,
-                    file_name="Decision_Report.pdf",
+                    file_name="Decisions.pdf",
                     mime="application/pdf"
                 )
             except Exception as e:
-                st.error(f"AI Error: {e}")
+                # Fallback in case a specific model name fails
+                st.error(f"Error: {e}. Trying to find available models...")
+                available_models = [m.name for m in client.models.list()]
+                st.write(f"Available models for your key: {available_models}")
